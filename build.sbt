@@ -1,5 +1,5 @@
 
-name := "sbt-spray-swaggergen"
+name := "sbt-swagger-spraygen"
 
 organization := "org.sauldhernandez"
 
@@ -10,8 +10,7 @@ sbtPlugin := true
 //Dependencies
 libraryDependencies ++= Seq(
   "io.swagger" % "swagger-parser" % "1.0.10",
-  "com.eed3si9n" %% "treehugger" % "0.4.1",
-  "org.json"     % "json"        % "20140107"
+  "com.eed3si9n" %% "treehugger" % "0.4.1"
 )
 
 // Settings to build a nice looking plugin site
