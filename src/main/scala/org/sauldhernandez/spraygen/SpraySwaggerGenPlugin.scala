@@ -43,6 +43,4 @@ object SpraySwaggerGenPlugin extends AutoPlugin {
 
     Seq(packageOutput)
   }
-
-
 }

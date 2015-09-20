@@ -4,7 +4,7 @@ addSbtPlugin("com.typesafe.sbt" % "sbt-git" % "0.6.4")
 
 addSbtPlugin("com.typesafe.sbt" % "sbt-site" % "0.8.1")
 
-libraryDependencies <+= (sbtVersion) { sv =>
+libraryDependencies <+= sbtVersion { sv =>
   "org.scala-sbt" % "scripted-plugin" % sv
 }
 
