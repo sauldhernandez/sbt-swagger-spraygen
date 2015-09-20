@@ -1,6 +1,6 @@
 # Swagger code generation for Spray
 
-![BuildStatus](https://snap-ci.com/sauldhernandez/sbt-swagger-spraygen/branch/master/build_image)
+[![Build Status](https://snap-ci.com/sauldhernandez/sbt-swagger-spraygen/branch/master/build_image)](https://snap-ci.com/sauldhernandez/sbt-swagger-spraygen/branch/master)
 
 ## Overview
 
