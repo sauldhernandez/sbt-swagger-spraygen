@@ -1,4 +1,4 @@
-package org.sauldhernandez.spraygen
+package com.sauldhernandez.spraygen
 
 import io.swagger.models.properties.{ObjectProperty, ArrayProperty, RefProperty, Property}
 import io.swagger.models.{ArrayModel, Model, Swagger}

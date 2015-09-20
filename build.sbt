@@ -1,7 +1,7 @@
 
 name := "sbt-swagger-spraygen"
 
-organization := "org.sauldhernandez"
+organization := "com.sauldhernandez"
 
 scalaVersion in Global := "2.10.5"
 

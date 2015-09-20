@@ -19,7 +19,7 @@ If jsonFormat generation is enabled, the generated formats can be used with [spr
 - Add the plugin in your `plugins.sbt`:
 
 ```
-addSbtPlugin("org.sauldhernandez" % "sbt-swagger-spraygen" % "0.1")
+addSbtPlugin("com.sauldhernandez" % "sbt-swagger-spraygen" % "0.1")
 ```
 
 - This plugin is an AutoPlugin, so you must add it to your project in `build.sbt`:

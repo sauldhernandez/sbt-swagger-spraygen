@@ -1,4 +1,4 @@
-package org.sauldhernandez.spraygen
+package com.sauldhernandez.spraygen
 
 import sbt._
 import Keys._
