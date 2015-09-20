@@ -1,8 +1,3 @@
-/* Copyright (C) 2015 Synergy-GB LLC.
- * All rights reserved.
- * This file is subject to the terms and conditions defined in
- * file 'LICENSE', which is part of this source code package.
- */
 package org.sauldhernandez.spraygen
 
 import io.swagger.models.properties.{ObjectProperty, ArrayProperty, RefProperty, Property}
@@ -14,7 +9,7 @@ import treehuggerDSL._
 import scala.collection.JavaConversions._
 
 /**
- * Created by saul on 9/20/15.
+ * Automatically generates model classes and spray jsonFormats from a swagger definition object.
  */
 class ModelGenerator(swaggerData : Swagger, packageName : String, generateJsonFormats : Boolean, ignoreModels : Set[String]) {
 
