@@ -5,7 +5,7 @@ organization := "com.sauldhernandez"
 
 scalaVersion in Global := "2.10.5"
 
-version := "0.1-SNAPSHOT"
+version := "0.2-SNAPSHOT"
 
 sbtPlugin := true
 

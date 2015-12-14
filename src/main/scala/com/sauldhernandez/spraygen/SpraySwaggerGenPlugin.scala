@@ -37,10 +37,14 @@ object SpraySwaggerGenPlugin extends AutoPlugin {
 
     val swaggerData = new SwaggerParser().read(sourceFile.getAbsolutePath)
     val packageOutput = sourceDir / "main" / "spraygen" / "models.scala"
+    val endpointOutput = sourceDir / "main" / "spraygen" / "endpoints.scala"
 
     val generator = new ModelGenerator(swaggerData, packageName, jsonFormats, ignore)
-    write(packageOutput, generator.generate)
+    val endpointGenerator = new EndpointGenerator(swaggerData, packageName)
 
-    Seq(packageOutput)
+    write(packageOutput, generator.generate)
+    write(endpointOutput, endpointGenerator.generate)
+
+    Seq(packageOutput, endpointOutput)
   }
 }
