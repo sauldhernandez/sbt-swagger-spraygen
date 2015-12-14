@@ -7,8 +7,8 @@ package com.sauldhernandez.spraygen
 
 import java.util
 
-import io.swagger.models.parameters.{Parameter, PathParameter}
-import io.swagger.models.{HttpMethod, Path, Swagger}
+import io.swagger.models.parameters.{BodyParameter, Parameter, PathParameter}
+import io.swagger.models.{RefModel, HttpMethod, Path, Swagger}
 import treehugger.forest._
 import definitions._
 import treehuggerDSL._
@@ -18,13 +18,15 @@ import scala.collection.JavaConversions._
 /**
  * Creates spray directive compositions that can be used to implement REST endpoints
  */
-class EndpointGenerator( swaggerData : Swagger, packageName : String ) {
+class EndpointGenerator( swaggerData : Swagger, packageName : String, jsonFormats : Boolean ) {
 
   def generate : String = {
 
+    val jsonImports = if(jsonFormats) Seq(IMPORT("spray.httpx.SprayJsonSupport._"), IMPORT(s"$packageName.models._")) else Seq()
     val packageObject = PACKAGE(packageName) := BLOCK(
       PACKAGEOBJECTDEF("endpoints") := BLOCK(
         Seq(IMPORT("spray.routing.Directives._")) ++
+        jsonImports ++
         swaggerData.getPaths.flatMap( x => generatePathEndpoints(x._1, x._2))
       )
     )
@@ -64,6 +66,7 @@ class EndpointGenerator( swaggerData : Swagger, packageName : String ) {
             case x : PathParameter =>
               x.getType match {
                 case "string" => REF("Segment")
+                case "boolean" => REF("Segment") //TODO: Proper boolean manipulation
                 case "integer" => REF("IntNumber")
                 case "number" => REF("DoubleNumber")
               }
@@ -78,9 +81,30 @@ class EndpointGenerator( swaggerData : Swagger, packageName : String ) {
       //Build the path Directive
       val pathDirective = REF("path") APPLY pathElements.reduceLeft { (a, b) => a INFIX("/") APPLY(b) }
 
+      //If the operation has a body parameter, a parsing directive must be added.
+      val bodyParam = operation.getParameters.find(_.getIn == "body").filter(_ => jsonFormats).flatMap {
+        case x : BodyParameter => Some(x)
+        case _ => None
+      }
+
+      val bodyDirective = bodyParam.map { param =>
+        param.getSchema() match {
+          case model : RefModel =>
+            val modelName = model.get$ref().split("/").last
+            REF("entity") APPLY(REF("as") APPLYTYPE(s"$packageName.models.$modelName")  )
+          case _ =>
+            //TODO: Add support for non-ref models
+            throw new UnsupportedOperationException("Only ref models are currently supported.")
+        }
+      }
+
       //For now, return the combination of both
       val name = Seq(method.name().toLowerCase()) ++ pathPieces.map(name => if(name.startsWith("{")) stripBrackets(name) else name)
-      VAL(camelCase(name)) := methodDirective INFIX("&") APPLY(pathDirective)
+      val resultDirective = if(bodyDirective.isDefined)
+        methodDirective INFIX("&") APPLY(pathDirective) INFIX("&") APPLY(bodyDirective.get)
+      else
+        methodDirective INFIX("&") APPLY(pathDirective)
+      VAL(camelCase(name)) := resultDirective
     }
   }
 
