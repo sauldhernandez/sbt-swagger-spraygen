@@ -9,16 +9,18 @@ import java.util
 
 import io.swagger.models.parameters.{BodyParameter, Parameter, PathParameter}
 import io.swagger.models._
+import sbt.State
 import treehugger.forest._
 import definitions._
 import treehuggerDSL._
 
 import scala.collection.JavaConversions._
+import scala.collection.mutable
 
 /**
  * Creates spray directive compositions that can be used to implement REST endpoints
  */
-class EndpointGenerator( swaggerData : Swagger, packageName : String, jsonFormats : Boolean ) {
+class EndpointGenerator(state : State, swaggerData : Swagger, packageName : String, authenticateMappings : Map[String, String], jsonFormats : Boolean, extraImports : Seq[String] ) {
 
   private case class Op(name : String, path : Path, method : HttpMethod, operation : Operation)
 
@@ -31,7 +33,8 @@ class EndpointGenerator( swaggerData : Swagger, packageName : String, jsonFormat
 
     val packageObject = PACKAGE(packageName) := BLOCK(
       PACKAGEOBJECTDEF("endpoints") := BLOCK(
-        Seq(IMPORT("spray.routing.Directives._")) ++
+        Seq(IMPORT("spray.routing.Directives._"), IMPORT("scala.concurrent.ExecutionContext.Implicits.global")) ++
+        extraImports.map(pkg => IMPORT(pkg)) ++
         jsonImports ++
         endpointSources.map( source => generatePathTrait(source._1, source._2.toSeq))
       )
@@ -75,7 +78,7 @@ class EndpointGenerator( swaggerData : Swagger, packageName : String, jsonFormat
           case x : PathParameter =>
             x.getType match {
               case "string" => REF("Segment")
-              case "boolean" => REF("Segment") //TODO: Proper boolean manipulation
+              case "boolean" => REF("Map(\"true\" -> true, \"false\" -> false)")
               case "integer" => REF("IntNumber")
               case "number" => REF("DoubleNumber")
             }
@@ -100,21 +103,38 @@ class EndpointGenerator( swaggerData : Swagger, packageName : String, jsonFormat
       param.getSchema() match {
         case model : RefModel =>
           val modelName = model.get$ref().split("/").last
-          REF("entity") APPLY(REF("as") APPLYTYPE(s"$packageName.models.$modelName")  )
+          REF("entity") APPLY(REF("as") APPLYTYPE s"$packageName.models.$modelName")
         case _ =>
           //TODO: Add support for non-ref models
           throw new UnsupportedOperationException("Only ref models are currently supported.")
       }
     }
 
-    //For now, return the combination of both
-    val name = Seq(method.name().toLowerCase()) ++ pathPieces.map(name => if(name.startsWith("{")) stripBrackets(name) else name)
-    val resultDirective = if(bodyDirective.isDefined)
-      methodDirective INFIX("&") APPLY(pathDirective) INFIX("&") APPLY(bodyDirective.get)
-    else
-      methodDirective INFIX("&") APPLY(pathDirective)
+    //If the operation has an authorization method, an authenticate directive (or several) should be added
+    val securityDirectives = Option(operation.getSecurity).map(sec => sec.flatMap { securityRequirement =>
+      securityRequirement.map { x =>
+        val (securityDefinitionName, oauthSchemes) =  x
+        if(oauthSchemes.isEmpty) {
+          //Non-oauth2 scheme
+          val authenticatorName = authenticateMappings.get(securityDefinitionName)
+          REF("authenticate") APPLY REF(authenticatorName.getOrElse {
+            state.log.error(s"Could not find authenticator mapping for security definition $securityDefinitionName.")
+            throw new IllegalArgumentException("authorizationHandler")
+          })
+        }
+        else {
+          //OAuth2 Scheme
+          throw new UnsupportedOperationException("OAuth 2 security definitions not currently supported.")
+        }
+      }
+    }).getOrElse(mutable.Buffer())
 
-    VAL(camelCase(name)) := resultDirective
+    val name = Seq(method.name().toLowerCase()) ++ pathPieces.map(name => if(name.startsWith("{")) stripBrackets(name) else name)
+
+    val base = methodDirective INFIX "&" APPLY pathDirective
+    val withBody = bodyDirective.map{ d => base INFIX "&" APPLY d }.getOrElse(base)
+    val withAuth = securityDirectives.foldLeft(withBody)( (prev, next) => prev INFIX "&" APPLY next)
+    VAL(camelCase(name)) := withAuth
   }
 
   def stripBrackets(name : String) = name.replace("{", "").replace("}", "")
