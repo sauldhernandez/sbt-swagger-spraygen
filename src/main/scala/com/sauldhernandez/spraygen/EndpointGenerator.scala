@@ -7,7 +7,7 @@ package com.sauldhernandez.spraygen
 
 import java.util
 
-import io.swagger.models.parameters.{BodyParameter, Parameter, PathParameter}
+import io.swagger.models.parameters.{QueryParameter, BodyParameter, Parameter, PathParameter}
 import io.swagger.models._
 import sbt.State
 import treehugger.forest._
@@ -129,12 +129,35 @@ class EndpointGenerator(state : State, swaggerData : Swagger, packageName : Stri
       }
     }).getOrElse(mutable.Buffer())
 
+    //Add query params directive
+    val queryParams = (pathParams ++ op.operation.getParameters).flatMap {
+      case x: QueryParameter => Some(x)
+      case x => None
+    }.map { queryParam =>
+      val value = queryParam.getType match {
+        case "string" => LIT(queryParam.getName)
+        case "integer" => LIT(queryParam.getName) DOT "as" APPLYTYPE IntClass
+        case "number" => LIT(queryParam.getName) DOT "as" APPLYTYPE DoubleClass
+      }
+
+      if(queryParam.getRequired)
+        value : Tree
+      else
+        value DOT "?" : Tree
+    }
+
+    val paramsDirective = if(queryParams.isEmpty) None else Some {
+      REF("parameters") APPLY queryParams
+    }
+
     val name = Seq(method.name().toLowerCase()) ++ pathPieces.map(name => if(name.startsWith("{")) stripBrackets(name) else name)
 
     val base = methodDirective INFIX "&" APPLY pathDirective
     val withBody = bodyDirective.map{ d => base INFIX "&" APPLY d }.getOrElse(base)
     val withAuth = securityDirectives.foldLeft(withBody)( (prev, next) => prev INFIX "&" APPLY next)
-    VAL(camelCase(name)) := withAuth
+    val withQueryParams = paramsDirective.map( d => withAuth INFIX "&" APPLY d).getOrElse(withAuth)
+
+    DEF(camelCase(name)) := withQueryParams
   }
 
   def stripBrackets(name : String) = name.replace("{", "").replace("}", "")
