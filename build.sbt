@@ -11,7 +11,7 @@ sbtPlugin := true
 
 //Dependencies
 libraryDependencies ++= Seq(
-  "io.swagger" % "swagger-parser" % "1.0.10",
+  "io.swagger" % "swagger-parser" % "1.0.16",
   "com.eed3si9n" %% "treehugger" % "0.4.1"
 )
 

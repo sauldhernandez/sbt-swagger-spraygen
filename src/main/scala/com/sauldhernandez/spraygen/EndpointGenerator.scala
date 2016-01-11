@@ -20,7 +20,7 @@ import scala.collection.mutable
 /**
  * Creates spray directive compositions that can be used to implement REST endpoints
  */
-class EndpointGenerator(state : State, swaggerData : Swagger, packageName : String, authenticateMappings : Map[String, String], jsonFormats : Boolean, extraImports : Seq[String] ) {
+class EndpointGenerator(state : State, swaggerData : Swagger, packageName : String, authenticateMappings : Map[String, (String, Seq[(String, String)])], jsonFormats : Boolean, extraImports : Seq[String] ) {
 
   private case class Op(name : String, path : Path, method : HttpMethod, operation : Operation)
 
@@ -44,8 +44,21 @@ class EndpointGenerator(state : State, swaggerData : Swagger, packageName : Stri
   }
 
   private def generatePathTrait(name : String, operations : Seq[Op]) = TRAITDEF(s"${name.capitalize}Endpoints") := BLOCK(
+    generateAuthenticateImplicits(operations) ++
     operations.map(x => generateOperationEndpoint(x))
+
   )
+
+  private def generateAuthenticateImplicits(operations : Seq[Op]) = operations
+      .flatMap(op => Option(op.operation.getSecurity))
+      .flatMap(sec => sec.flatten).map(_._1)
+      .flatMap(authenticateMappings.get)
+      .flatMap(_._2)
+      .distinct
+      .map { item =>
+        val (name, t) = item
+        DEF(name) withFlags Flags.IMPLICIT withType TYPE_REF(t) : Tree
+      }
 
   private def generateOperationEndpoint(op : Op) : Tree = {
     //Get the parameters
@@ -56,6 +69,7 @@ class EndpointGenerator(state : State, swaggerData : Swagger, packageName : Stri
     val (method, operation) = (op.method, op.operation)
 
     val methodDirective = method match {
+      case HttpMethod.HEAD => REF("head")
       case HttpMethod.GET => REF("get")
       case HttpMethod.POST => REF("post")
       case HttpMethod.DELETE => REF("delete")
@@ -91,7 +105,8 @@ class EndpointGenerator(state : State, swaggerData : Swagger, packageName : Stri
     }
 
     //Build the path Directive
-    val pathDirective = REF("path") APPLY pathElements.reduceLeft { (a, b) => a INFIX("/") APPLY(b) }
+    val basePath = Option(swaggerData.getBasePath).map(base => base.split("/").map(LIT(_)).toSeq)
+    val pathDirective = REF("path") APPLY (basePath.getOrElse(Seq()) ++ pathElements).reduceLeft { (a, b) => a INFIX("/") APPLY(b) }
 
     //If the operation has a body parameter, a parsing directive must be added.
     val bodyParam = operation.getParameters.find(_.getIn == "body").filter(_ => jsonFormats).flatMap {
@@ -117,7 +132,7 @@ class EndpointGenerator(state : State, swaggerData : Swagger, packageName : Stri
         if(oauthSchemes.isEmpty) {
           //Non-oauth2 scheme
           val authenticatorName = authenticateMappings.get(securityDefinitionName)
-          REF("authenticate") APPLY REF(authenticatorName.getOrElse {
+          REF("authenticate") APPLY REF(authenticatorName.map(_._1).getOrElse {
             state.log.error(s"Could not find authenticator mapping for security definition $securityDefinitionName.")
             throw new IllegalArgumentException("authorizationHandler")
           })
@@ -150,7 +165,7 @@ class EndpointGenerator(state : State, swaggerData : Swagger, packageName : Stri
       REF("parameters") APPLY queryParams
     }
 
-    val name = Seq(method.name().toLowerCase()) ++ pathPieces.map(name => if(name.startsWith("{")) stripBrackets(name) else name)
+    val name = Seq(method.name().toLowerCase()) ++ pathPieces.map(n => camelCase(n.split("-"))).map(name => if(name.startsWith("{")) stripBrackets(name) else name)
 
     val base = methodDirective INFIX "&" APPLY pathDirective
     val withBody = bodyDirective.map{ d => base INFIX "&" APPLY d }.getOrElse(base)

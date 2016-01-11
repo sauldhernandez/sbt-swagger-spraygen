@@ -17,7 +17,7 @@ object SpraySwaggerGenPlugin extends AutoPlugin {
     lazy val sprayPackageName = SettingKey[String]("package-name", "Package name for the generated files")
     lazy val ignoreModels = SettingKey[Seq[String]]("ignore-models", "Swagger models whose code will not be generated.")
     lazy val generateJsonFormats = SettingKey[Boolean]("generate-json-formats", "Generate json format implicits for the generated model classes")
-    lazy val authorizationHandlers = SettingKey[Map[String, String]]("authorization-handler", "Mapping to use to associate a swagger securityDefinition to a spray ContextAuthenticator.")
+    lazy val authorizationHandlers = SettingKey[Map[String, (String, Seq[(String, String)])]]("authorization-handler", "Mapping to use to associate a swagger securityDefinition to a spray ContextAuthenticator.")
     lazy val extraImports = SettingKey[Seq[String]]("extra-imports", "Additional imports to use when auto generating spray endpoints.")
   }
 
@@ -37,7 +37,7 @@ object SpraySwaggerGenPlugin extends AutoPlugin {
   )
 
 
-  def gen(state : State, sourceFile : File, packageName : String, jsonFormats : Boolean, sourceDir : File, ignore : Set[String], authHandler : Map[String, String], imports : Seq[String]) : Seq[File] = {
+  def gen(state : State, sourceFile : File, packageName : String, jsonFormats : Boolean, sourceDir : File, ignore : Set[String], authHandler : Map[String, (String, Seq[(String, String)])], imports : Seq[String]) : Seq[File] = {
 
     val swaggerData = new SwaggerParser().read(sourceFile.getAbsolutePath)
     val packageOutput = sourceDir / "main" / "spraygen" / "models.scala"
