@@ -105,8 +105,8 @@ class EndpointGenerator(state : State, swaggerData : Swagger, packageName : Stri
     }
 
     //Build the path Directive
-    val basePath = Option(swaggerData.getBasePath).map(base => base.split("/").map(LIT(_)).toSeq)
-    val pathDirective = REF("path") APPLY (basePath.getOrElse(Seq()) ++ pathElements).reduceLeft { (a, b) => a INFIX("/") APPLY(b) }
+    val basePath = Option(swaggerData.getBasePath).map(base => base.split("/").filter(!_.isEmpty).map(LIT(_)).toSeq)
+    val pathDirective = REF("path") APPLY (basePath.getOrElse(Seq()) ++ pathElements).reduceLeft { (a, b) => a INFIX "/" APPLY b }
 
     //If the operation has a body parameter, a parsing directive must be added.
     val bodyParam = operation.getParameters.find(_.getIn == "body").filter(_ => jsonFormats).flatMap {

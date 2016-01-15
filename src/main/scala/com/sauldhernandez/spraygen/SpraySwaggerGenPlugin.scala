@@ -27,7 +27,7 @@ object SpraySwaggerGenPlugin extends AutoPlugin {
    * Provide default settings
    */
   override lazy val projectSettings = Seq(
-    swaggerSource := file("src/main/swagger"),
+    swaggerSource := (sourceDirectory in Compile).value / "resources" / "api.yaml",
     authorizationHandlers := Map(),
     extraImports := Seq(),
     sprayPackageName := "swagger.spray",
