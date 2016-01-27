@@ -12,12 +12,10 @@ object SpraySwaggerGenPlugin extends AutoPlugin {
    * when the plugin is enabled
    */
   object autoImport {
+    type SprayAuthorizations = Map[String, (String, Seq[(String, String)])]
+    case class SprayGeneratorConfig(source : File, packageName : String, ignoreModels : Set[String] = Set(), withJsonFormats : Boolean = true, authorizationHandlers : SprayAuthorizations = Map())
     lazy val spraygen = TaskKey[Seq[File]]("spraygen", "Generates model code from swagger")
-    lazy val swaggerSource = SettingKey[File]("swagger-source", "Source file")
-    lazy val sprayPackageName = SettingKey[String]("package-name", "Package name for the generated files")
-    lazy val ignoreModels = SettingKey[Seq[String]]("ignore-models", "Swagger models whose code will not be generated.")
-    lazy val generateJsonFormats = SettingKey[Boolean]("generate-json-formats", "Generate json format implicits for the generated model classes")
-    lazy val authorizationHandlers = SettingKey[Map[String, (String, Seq[(String, String)])]]("authorization-handler", "Mapping to use to associate a swagger securityDefinition to a spray ContextAuthenticator.")
+    lazy val sprayGenerations = SettingKey[Seq[SprayGeneratorConfig]]("spray-generations", "Settings for the generated endpoints")
     lazy val extraImports = SettingKey[Seq[String]]("extra-imports", "Additional imports to use when auto generating spray endpoints.")
   }
 
@@ -27,28 +25,28 @@ object SpraySwaggerGenPlugin extends AutoPlugin {
    * Provide default settings
    */
   override lazy val projectSettings = Seq(
-    swaggerSource := (sourceDirectory in Compile).value / "resources" / "api.yaml",
-    authorizationHandlers := Map(),
+    sprayGenerations := Seq(SprayGeneratorConfig(
+      source = (sourceDirectory in Compile).value / "resources" / "api.yaml",
+      packageName = "swagger.spray"
+    )),
     extraImports := Seq(),
-    sprayPackageName := "swagger.spray",
-    generateJsonFormats := true,
-    ignoreModels := Seq(),
-    spraygen := gen(state.value, swaggerSource.value, sprayPackageName.value, generateJsonFormats.value, sourceManaged.value, ignoreModels.value.toSet, authorizationHandlers.value, extraImports.value)
+    spraygen := gen(state.value, sprayGenerations.value, extraImports.value, sourceManaged.value)
   )
 
 
-  def gen(state : State, sourceFile : File, packageName : String, jsonFormats : Boolean, sourceDir : File, ignore : Set[String], authHandler : Map[String, (String, Seq[(String, String)])], imports : Seq[String]) : Seq[File] = {
+  def gen(state : State, generations : Seq[SprayGeneratorConfig], imports : Seq[String], sourceDir : File) : Seq[File] = {
+    generations.flatMap { config =>
+      val swaggerData = new SwaggerParser().read(config.source.getAbsolutePath)
+      val packageOutput = sourceDir / "main" / "spraygen" / "models.scala"
+      val endpointOutput = sourceDir / "main" / "spraygen" / "endpoints.scala"
 
-    val swaggerData = new SwaggerParser().read(sourceFile.getAbsolutePath)
-    val packageOutput = sourceDir / "main" / "spraygen" / "models.scala"
-    val endpointOutput = sourceDir / "main" / "spraygen" / "endpoints.scala"
+      val generator = new ModelGenerator(swaggerData, config.packageName, config.withJsonFormats, config.ignoreModels)
+      val endpointGenerator = new EndpointGenerator(state, swaggerData, config.packageName, config.authorizationHandlers, config.withJsonFormats, imports)
 
-    val generator = new ModelGenerator(swaggerData, packageName, jsonFormats, ignore)
-    val endpointGenerator = new EndpointGenerator(state, swaggerData, packageName, authHandler, jsonFormats, imports)
+      write(packageOutput, generator.generate)
+      write(endpointOutput, endpointGenerator.generate)
 
-    write(packageOutput, generator.generate)
-    write(endpointOutput, endpointGenerator.generate)
-
-    Seq(packageOutput, endpointOutput)
+      Seq(packageOutput, endpointOutput)
+    }
   }
 }

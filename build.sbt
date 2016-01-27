@@ -5,14 +5,15 @@ organization := "com.sauldhernandez"
 
 scalaVersion in Global := "2.10.5"
 
-version := "0.2-SNAPSHOT"
+version := "0.3-SNAPSHOT"
 
 sbtPlugin := true
 
 //Dependencies
 libraryDependencies ++= Seq(
   "io.swagger" % "swagger-parser" % "1.0.16",
-  "com.eed3si9n" %% "treehugger" % "0.4.1"
+  "com.eed3si9n" %% "treehugger" % "0.4.1",
+  "org.slf4j" % "slf4j-jdk14" % "1.7.13"
 )
 
 // Settings to build a nice looking plugin site
