@@ -11,7 +11,7 @@ import scala.collection.JavaConversions._
 /**
  * Automatically generates model classes and spray jsonFormats from a swagger definition object.
  */
-class ModelGenerator(swaggerData : Swagger, packageName : String, generateJsonFormats : Boolean, ignoreModels : Set[String], annotations : Map[String, String]) {
+class ModelGenerator(swaggerData : Swagger, packageName : String, generateJsonFormats : Boolean, ignoreModels : Set[String], annotations : Map[String, String], jsonTransform : Option[String], extraImports : Seq[String]) {
 
   type PropertyProcessResult = (Type, Seq[Tree], Set[String])
   type ModelProcessResult = (Set[String], Seq[Tree])
@@ -36,9 +36,10 @@ class ModelGenerator(swaggerData : Swagger, packageName : String, generateJsonFo
     }
 
     val packageObject = PACKAGE(packageName) := BLOCK(
-      PACKAGEOBJECTDEF("models") := BLOCK(
+      extraImports.map(pkg => IMPORT(pkg)) ++ Seq(
+        PACKAGEOBJECTDEF("models") := BLOCK(
         resultingModels._2
-      )
+      ))
     )
 
     if(generateJsonFormats)
@@ -72,7 +73,6 @@ class ModelGenerator(swaggerData : Swagger, packageName : String, generateJsonFo
 
       } yield ANNOT(TYPE_REF(mapped.get))
 
-      println(annotationsTree)
       val resultType : ValDef = if(paramInfo.getRequired) PARAM(paramName, paramType) withAnnots annotationsTree else PARAM(paramName, TYPE_OPTION(paramType)) withAnnots annotationsTree
 
       (previousTypes ++ Seq(resultType), previousTree ++ paramTree, previousProcessed ++ paramProcessed)
@@ -81,7 +81,12 @@ class ModelGenerator(swaggerData : Swagger, packageName : String, generateJsonFo
     val classDef = CASECLASSDEF(name) withParams paramDefs
     val tree = if(generateJsonFormats)
       paramTrees ++ Seq[Tree](
-        VAL(s"${name}Format") withFlags Flags.IMPLICIT := REF(s"jsonFormat${properties.size}") APPLY REF(name),
+        VAL(s"${name}Format") withFlags Flags.IMPLICIT := {
+          val jsonFormatCall = REF(s"jsonFormat${properties.size}") APPLY REF(name)
+          jsonTransform.map { functionName =>
+            REF(functionName) APPLY jsonFormatCall
+          }.getOrElse(jsonFormatCall)
+        },
         classDef
       )
     else
