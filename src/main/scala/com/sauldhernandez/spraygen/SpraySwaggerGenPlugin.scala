@@ -17,6 +17,8 @@ object SpraySwaggerGenPlugin extends AutoPlugin {
     lazy val spraygen = TaskKey[Seq[File]]("spraygen", "Generates model code from swagger")
     lazy val sprayGenerations = SettingKey[Seq[SprayGeneratorConfig]]("spray-generations", "Settings for the generated endpoints")
     lazy val extraImports = SettingKey[Seq[String]]("extra-imports", "Additional imports to use when auto generating spray endpoints.")
+    lazy val modelAnnotations = SettingKey[Map[String, String]]("model-annotations", "Mapping for extensions to annotations conversion in the model generation process")
+    lazy val customExtractions = SettingKey[Map[String, String]]("custom-extractions", "Parameters for which a custom extraction directive will be applied")
   }
 
   import autoImport._
@@ -30,18 +32,20 @@ object SpraySwaggerGenPlugin extends AutoPlugin {
       packageName = "swagger.spray"
     )),
     extraImports := Seq(),
-    spraygen := gen(state.value, sprayGenerations.value, extraImports.value, sourceManaged.value)
+    modelAnnotations := Map(),
+    customExtractions := Map(),
+    spraygen := gen(state.value, sprayGenerations.value, extraImports.value, sourceManaged.value, customExtractions.value, modelAnnotations.value)
   )
 
 
-  def gen(state : State, generations : Seq[SprayGeneratorConfig], imports : Seq[String], sourceDir : File) : Seq[File] = {
+  def gen(state : State, generations : Seq[SprayGeneratorConfig], imports : Seq[String], sourceDir : File, extractions : Map[String, String], annotations : Map[String, String]) : Seq[File] = {
     generations.flatMap { config =>
       val swaggerData = new SwaggerParser().read(config.source.getAbsolutePath)
       val packageOutput = sourceDir / "main" / "spraygen" / "models.scala"
       val endpointOutput = sourceDir / "main" / "spraygen" / "endpoints.scala"
 
-      val generator = new ModelGenerator(swaggerData, config.packageName, config.withJsonFormats, config.ignoreModels)
-      val endpointGenerator = new EndpointGenerator(state, swaggerData, config.packageName, config.authorizationHandlers, config.withJsonFormats, imports)
+      val generator = new ModelGenerator(swaggerData, config.packageName, config.withJsonFormats, config.ignoreModels, annotations)
+      val endpointGenerator = new EndpointGenerator(state, swaggerData, config.packageName, config.authorizationHandlers, config.withJsonFormats, imports, extractions)
 
       write(packageOutput, generator.generate)
       write(endpointOutput, endpointGenerator.generate)

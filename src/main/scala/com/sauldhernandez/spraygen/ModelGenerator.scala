@@ -11,7 +11,7 @@ import scala.collection.JavaConversions._
 /**
  * Automatically generates model classes and spray jsonFormats from a swagger definition object.
  */
-class ModelGenerator(swaggerData : Swagger, packageName : String, generateJsonFormats : Boolean, ignoreModels : Set[String]) {
+class ModelGenerator(swaggerData : Swagger, packageName : String, generateJsonFormats : Boolean, ignoreModels : Set[String], annotations : Map[String, String]) {
 
   type PropertyProcessResult = (Type, Seq[Tree], Set[String])
   type ModelProcessResult = (Set[String], Seq[Tree])
@@ -51,9 +51,9 @@ class ModelGenerator(swaggerData : Swagger, packageName : String, generateJsonFo
     case arrayModel : ArrayModel =>
       //Array models are added as a type alias to the package object
       val (arrayType, arrayTree, arrayProcessed) = typeFromProperty(arrayModel.getItems, name, alreadyProcessed)
-      (Set(name) ++ arrayProcessed, arrayTree ++ Seq(TYPEVAR(name) := TYPE_LIST(arrayType)))
+      (Set(name) ++ arrayProcessed, arrayTree ++ Seq(TYPEVAR(name) := TYPE_SEQ(arrayType)))
     case objectModel =>
-      val (resultTree, resultProcessed) = generateComplexObject(name, objectModel.getProperties.toMap, alreadyProcessed)
+      val (resultTree, resultProcessed) = generateComplexObject(name, Option(objectModel.getProperties).map(_.toMap).getOrElse(Map()), alreadyProcessed)
       (Set(name) ++ resultProcessed, resultTree)
   }
 
@@ -63,7 +63,17 @@ class ModelGenerator(swaggerData : Swagger, packageName : String, generateJsonFo
       val (paramName, paramInfo) = m
       val (paramType, paramTree, paramProcessed) = typeFromProperty(paramInfo, name, alreadyProcessed ++ previousProcessed)
 
-      val resultType : ValDef = if(paramInfo.getRequired) PARAM(paramName, paramType) else PARAM(paramName, TYPE_OPTION(paramType))
+      val annotationsData = Option(paramInfo.getVendorExtensions).map(_.toMap).getOrElse(Map())
+      val annotationsTree = for {
+        (name, rawValue) <- annotationsData
+        if rawValue.isInstanceOf[java.lang.Boolean] && rawValue.asInstanceOf[Boolean]
+        mapped = annotations.get(name)
+        if mapped.isDefined
+
+      } yield ANNOT(TYPE_REF(mapped.get))
+
+      println(annotationsTree)
+      val resultType : ValDef = if(paramInfo.getRequired) PARAM(paramName, paramType) withAnnots annotationsTree else PARAM(paramName, TYPE_OPTION(paramType)) withAnnots annotationsTree
 
       (previousTypes ++ Seq(resultType), previousTree ++ paramTree, previousProcessed ++ paramProcessed)
     }
@@ -94,7 +104,7 @@ class ModelGenerator(swaggerData : Swagger, packageName : String, generateJsonFo
       }
     case array : ArrayProperty =>
       val (arrayType, tree, processed) = typeFromProperty(array.getItems, parentName, alreadyProcessed)
-      (TYPE_LIST(arrayType), tree, processed)
+      (TYPE_SEQ(arrayType), tree, processed)
     case obj : ObjectProperty =>
       val next = innerModelCount.get(parentName).map(_ + 1).getOrElse(1)
       innerModelCount.update(parentName, next)

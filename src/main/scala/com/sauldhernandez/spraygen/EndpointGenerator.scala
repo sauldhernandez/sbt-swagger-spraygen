@@ -1,8 +1,3 @@
-/* Copyright (C) 2015 Synergy-GB LLC.
- * All rights reserved.
- * This file is subject to the terms and conditions defined in
- * file 'LICENSE', which is part of this source code package.
- */
 package com.sauldhernandez.spraygen
 
 import java.util
@@ -20,13 +15,13 @@ import scala.collection.mutable
 /**
  * Creates spray directive compositions that can be used to implement REST endpoints
  */
-class EndpointGenerator(state : State, swaggerData : Swagger, packageName : String, authenticateMappings : Map[String, (String, Seq[(String, String)])], jsonFormats : Boolean, extraImports : Seq[String] ) {
+class EndpointGenerator(state : State, swaggerData : Swagger, packageName : String, authenticateMappings : Map[String, (String, Seq[(String, String)])], jsonFormats : Boolean, extraImports : Seq[String], customExtractions : Map[String, String] ) {
 
   private case class Op(name : String, path : Path, method : HttpMethod, operation : Operation)
 
   def generate : String = {
 
-    val jsonImports = if(jsonFormats) Seq(IMPORT("spray.httpx.SprayJsonSupport._"), IMPORT(s"$packageName.models._")) else Seq()
+    val jsonImports = if(jsonFormats) Seq(IMPORT("spray.httpx.SprayJsonSupport._"), IMPORT("spray.json.DefaultJsonProtocol._"), IMPORT(s"$packageName.models._")) else Seq()
 
     val endpointSources = swaggerData.getPaths.flatMap( x => x._2.getOperationMap.map( v => Op(x._1, x._2, v._1, v._2)))
       .groupBy(_.operation.getTags.headOption.getOrElse("uncategorized"))
