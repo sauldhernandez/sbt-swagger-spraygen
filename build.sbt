@@ -1,3 +1,4 @@
+lazy val root = (project in file(".")).enablePlugins(VersioningPlugin)
 
 name := "sbt-swagger-spraygen"
 
@@ -5,7 +6,7 @@ organization := "com.sauldhernandez"
 
 scalaVersion in Global := "2.10.5"
 
-version := "0.3-SNAPSHOT"
+semanticVersion := Version(0, 3, 0)
 
 sbtPlugin := true
 
