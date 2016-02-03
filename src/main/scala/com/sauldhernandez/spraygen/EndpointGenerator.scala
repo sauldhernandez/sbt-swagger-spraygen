@@ -2,7 +2,7 @@ package com.sauldhernandez.spraygen
 
 import java.util
 
-import io.swagger.models.parameters.{QueryParameter, BodyParameter, Parameter, PathParameter}
+import io.swagger.models.parameters._
 import io.swagger.models._
 import sbt.State
 import treehugger.forest._
@@ -11,6 +11,7 @@ import treehuggerDSL._
 
 import scala.collection.JavaConversions._
 import scala.collection.mutable
+import scala.reflect.ClassTag
 
 /**
  * Creates spray directive compositions that can be used to implement REST endpoints
@@ -55,9 +56,39 @@ class EndpointGenerator(state : State, swaggerData : Swagger, packageName : Stri
         DEF(name) withFlags Flags.IMPLICIT withType TYPE_REF(t) : Tree
       }
 
+  private def retrieveRefParam(ref : RefParameter) = {
+    val paramName = ref.get$ref().split("/").last
+    val param = swaggerData.getParameters.toMap.get(paramName)
+
+    param.getOrElse(throw new UnsupportedOperationException(s"Could not solve parameter ref for name $paramName"))
+  }
+
+  private def matchPathType(pathParam : PathParameter) = pathParam.getType match {
+    case "string" => REF("Segment")
+    case "boolean" => REF("Map(\"true\" -> true, \"false\" -> false)")
+    case "integer" => REF("IntNumber")
+    case "number" => REF("DoubleNumber")
+  }
+
+  private def filterParameters[T <: Parameter : ClassTag](params : Seq[Parameter]) : Seq[T] = params.flatMap {
+      case x : T => Some(x)
+      case x : RefParameter => retrieveRefParam(x) match {
+        case refParam : T => Some(refParam)
+        case _ => None
+      }
+      case x => None
+    }.filter { param =>
+      //If the param has a custom extraction, it should not be provided here.
+      !customExtractions.contains(param.getName)
+    }
+
+
   private def generateOperationEndpoint(op : Op) : Tree = {
     //Get the parameters
     val pathParams = Option(op.path.getParameters).getOrElse(new util.ArrayList[Parameter]()).toIndexedSeq
+    val opParams = Option(op.operation.getParameters).getOrElse(new util.ArrayList[Parameter]()).toIndexedSeq
+
+    val allParams  = pathParams ++ opParams
 
     //Split the path
     val pathPieces = op.name.split("/")
@@ -72,6 +103,7 @@ class EndpointGenerator(state : State, swaggerData : Swagger, packageName : Stri
       case HttpMethod.PATCH => REF("patch")
       case HttpMethod.PUT => REF("put")
     }
+
     //Parse the pathPieces into segments
     val pathElements = pathPieces.filter(_.length > 0).map { piece =>
       if(piece.startsWith("{")) {
@@ -82,14 +114,12 @@ class EndpointGenerator(state : State, swaggerData : Swagger, packageName : Stri
             throw new UnsupportedOperationException(s"No parameter named $paramName was found for path ${op.name}.")
           }
         )
-
         param match {
-          case x : PathParameter =>
-            x.getType match {
-              case "string" => REF("Segment")
-              case "boolean" => REF("Map(\"true\" -> true, \"false\" -> false)")
-              case "integer" => REF("IntNumber")
-              case "number" => REF("DoubleNumber")
+          case x : PathParameter => matchPathType(x)
+          case x : RefParameter =>
+            retrieveRefParam(x) match {
+              case pathParam: PathParameter => matchPathType(pathParam)
+              case _ => throw new scala.UnsupportedOperationException(s"Referenced param ${x.get$ref()} is not a path parameter.")
             }
           case x => throw new UnsupportedOperationException(s"Expected a PathParameter.")
         }
@@ -104,21 +134,16 @@ class EndpointGenerator(state : State, swaggerData : Swagger, packageName : Stri
     val pathDirective = REF("path") APPLY (basePath.getOrElse(Seq()) ++ pathElements).reduceLeft { (a, b) => a INFIX "/" APPLY b }
 
     //If the operation has a body parameter, a parsing directive must be added.
-    val bodyParam = operation.getParameters.find(_.getIn == "body").filter(_ => jsonFormats).flatMap {
-      case x : BodyParameter => Some(x)
-      case _ => None
-    }
-
-    val bodyDirective = bodyParam.map { param =>
-      param.getSchema() match {
-        case model : RefModel =>
-          val modelName = model.get$ref().split("/").last
-          REF("entity") APPLY(REF("as") APPLYTYPE s"$packageName.models.$modelName")
-        case _ =>
-          //TODO: Add support for non-ref models
-          throw new UnsupportedOperationException("Only ref models are currently supported.")
-      }
-    }
+    val bodyDirective = filterParameters[BodyParameter](allParams).filter(_ => jsonFormats).map { param =>
+        param.getSchema match {
+          case model: RefModel =>
+            val modelName = model.get$ref().split("/").last
+            REF("entity") APPLY (REF("as") APPLYTYPE s"$packageName.models.$modelName")
+          case _ =>
+            //TODO: Add support for non-ref models
+            throw new UnsupportedOperationException("Only ref models are currently supported.")
+        }
+      }.headOption
 
     //If the operation has an authorization method, an authenticate directive (or several) should be added
     val securityDirectives = Option(operation.getSecurity).map(sec => sec.flatMap { securityRequirement =>
@@ -140,10 +165,7 @@ class EndpointGenerator(state : State, swaggerData : Swagger, packageName : Stri
     }).getOrElse(mutable.Buffer())
 
     //Add query params directive
-    val queryParams = (pathParams ++ op.operation.getParameters).flatMap {
-      case x: QueryParameter => Some(x)
-      case x => None
-    }.map { queryParam =>
+    val queryParams = filterParameters[QueryParameter](allParams).map { queryParam =>
       val value = queryParam.getType match {
         case "string" => LIT(queryParam.getName)
         case "integer" => LIT(queryParam.getName) DOT "as" APPLYTYPE IntClass
@@ -160,14 +182,27 @@ class EndpointGenerator(state : State, swaggerData : Swagger, packageName : Stri
       REF("parameters") APPLY queryParams
     }
 
+    //Add header params
+    val headerDirectives = filterParameters[HeaderParameter](allParams).map { param =>
+      val directive = if(param.getRequired) "headerValueByName" else "optionalHeaderValueByName"
+      REF(directive) APPLY LIT(param.getName) : Tree
+    }
+
+    //Add custom extractors
+    val customDirectives = allParams.flatMap { param =>
+      customExtractions.get(param.getName)
+    }.map ( REF(_) )
+
     val name = Seq(method.name().toLowerCase()) ++ pathPieces.map(n => camelCase(n.split("-"))).map(name => if(name.startsWith("{")) stripBrackets(name) else name)
 
     val base = methodDirective INFIX "&" APPLY pathDirective
-    val withBody = bodyDirective.map{ d => base INFIX "&" APPLY d }.getOrElse(base)
-    val withAuth = securityDirectives.foldLeft(withBody)( (prev, next) => prev INFIX "&" APPLY next)
-    val withQueryParams = paramsDirective.map( d => withAuth INFIX "&" APPLY d).getOrElse(withAuth)
+    val withBody = bodyDirective.map( base INFIX "&" APPLY _ ).getOrElse(base)
+    val withAuth = securityDirectives.foldLeft(withBody)( _ INFIX "&" APPLY _)
+    val withQueryParams = paramsDirective.map( withAuth INFIX "&" APPLY _).getOrElse(withAuth)
+    val withHeaders = headerDirectives.foldLeft(withQueryParams)( _ INFIX "&" APPLY _ )
+    val withCustom = customDirectives.foldLeft(withHeaders)( _ INFIX "&" APPLY _)
 
-    DEF(camelCase(name)) := withQueryParams
+    DEF(camelCase(name)) := withCustom
   }
 
   def stripBrackets(name : String) = name.replace("{", "").replace("}", "")
