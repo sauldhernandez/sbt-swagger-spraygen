@@ -138,7 +138,8 @@ class EndpointGenerator(state : State, swaggerData : Swagger, packageName : Stri
         param.getSchema match {
           case model: RefModel =>
             val modelName = model.get$ref().split("/").last
-            REF("entity") APPLY (REF("as") APPLYTYPE s"$packageName.models.$modelName")
+            val resultType = TYPE_REF(s"$packageName.models.$modelName")
+            REF("entity") APPLY (REF("as") APPLYTYPE (if(param.getRequired) resultType else TYPE_OPTION(resultType)))
           case _ =>
             //TODO: Add support for non-ref models
             throw new UnsupportedOperationException("Only ref models are currently supported.")
