@@ -2,6 +2,7 @@ package com.sauldhernandez.spraygen
 
 import java.util
 
+import com.sauldhernandez.spraygen.SpraySwaggerGenPlugin.autoImport.CustomEntityExtraction
 import io.swagger.models.parameters._
 import io.swagger.models._
 import sbt.State
@@ -16,7 +17,7 @@ import scala.reflect.ClassTag
 /**
  * Creates spray directive compositions that can be used to implement REST endpoints
  */
-class EndpointGenerator(state : State, swaggerData : Swagger, packageName : String, authenticateMappings : Map[String, (String, Seq[(String, String)])], jsonFormats : Boolean, extraImports : Seq[String], customExtractions : Map[String, String], customEntityExtraction : Option[String]) {
+class EndpointGenerator(state : State, swaggerData : Swagger, packageName : String, authenticateMappings : Map[String, (String, Seq[(String, String)])], jsonFormats : Boolean, extraImports : Seq[String], customExtractions : Map[String, String], customEntityExtraction : Option[CustomEntityExtraction]) {
 
   private case class Op(name : String, path : Path, method : HttpMethod, operation : Operation)
 
@@ -41,9 +42,22 @@ class EndpointGenerator(state : State, swaggerData : Swagger, packageName : Stri
 
   private def generatePathTrait(name : String, operations : Seq[Op]) = TRAITDEF(s"${name.capitalize}Endpoints") := BLOCK(
     generateAuthenticateImplicits(operations) ++
+    generateExtractionImplicits(operations) ++
     operations.map(x => generateOperationEndpoint(x))
 
   )
+
+  private def generateExtractionImplicits(operations : Seq[Op]) = customEntityExtraction.map { extraction =>
+    {for {
+      op <- operations
+      params = filterParameters[BodyParameter](findAllParams(op))
+      if params.nonEmpty
+    } yield extraction.implicits.map { x =>
+      val (name, t) = x
+      DEF(name) withFlags Flags.IMPLICIT withType TYPE_REF(t) : Tree
+    }}.toSet.flatten
+  }.getOrElse(Seq())
+
 
   private def generateAuthenticateImplicits(operations : Seq[Op]) = operations
       .flatMap(op => Option(op.operation.getSecurity))
@@ -82,13 +96,17 @@ class EndpointGenerator(state : State, swaggerData : Swagger, packageName : Stri
       !customExtractions.contains(param.getName)
     }
 
-
-  private def generateOperationEndpoint(op : Op) : Tree = {
+  private def findAllParams(op : Op) = {
     //Get the parameters
     val pathParams = Option(op.path.getParameters).getOrElse(new util.ArrayList[Parameter]()).toIndexedSeq
     val opParams = Option(op.operation.getParameters).getOrElse(new util.ArrayList[Parameter]()).toIndexedSeq
 
-    val allParams  = pathParams ++ opParams
+    pathParams ++ opParams
+  }
+
+  private def generateOperationEndpoint(op : Op) : Tree = {
+
+    val allParams  = findAllParams(op)
 
     //Split the path
     val pathPieces = op.name.split("/")
@@ -110,7 +128,7 @@ class EndpointGenerator(state : State, swaggerData : Swagger, packageName : Stri
         val paramName = stripBrackets(piece)
         //Find the param first in operation parameters, if not there look for it in path parameters.
         val param = operation.getParameters.find(param => param.getName == paramName && param.getIn == "path").getOrElse(
-          pathParams.find(param => param.getName == paramName && param.getIn == "path").getOrElse {
+          allParams.find(param => param.getName == paramName && param.getIn == "path").getOrElse {
             throw new UnsupportedOperationException(s"No parameter named $paramName was found for path ${op.name}.")
           }
         )
@@ -139,7 +157,7 @@ class EndpointGenerator(state : State, swaggerData : Swagger, packageName : Stri
           case model: RefModel =>
             val modelName = model.get$ref().split("/").last
             val resultType = TYPE_REF(s"$packageName.models.$modelName")
-            REF(customEntityExtraction.getOrElse("entity")) APPLY (REF("as") APPLYTYPE (if(param.getRequired) resultType else TYPE_OPTION(resultType)))
+            REF(customEntityExtraction.map(_.directiveName).getOrElse("entity")) APPLY (REF("as") APPLYTYPE (if(param.getRequired) resultType else TYPE_OPTION(resultType)))
           case _ =>
             //TODO: Add support for non-ref models
             throw new UnsupportedOperationException("Only ref models are currently supported.")

@@ -13,7 +13,8 @@ object SpraySwaggerGenPlugin extends AutoPlugin {
    */
   object autoImport {
     type SprayAuthorizations = Map[String, (String, Seq[(String, String)])]
-    case class SprayGeneratorConfig(source : File, packageName : String, ignoreModels : Set[String] = Set(), customEntityExtraction : Option[String] = None, withJsonFormats : Boolean = true, authorizationHandlers : SprayAuthorizations = Map())
+    case class CustomEntityExtraction(directiveName : String, implicits : Seq[(String, String)] = Seq())
+    case class SprayGeneratorConfig(source : File, packageName : String, ignoreModels : Set[String] = Set(), customEntityExtraction : Option[CustomEntityExtraction] = None, withJsonFormats : Boolean = true, authorizationHandlers : SprayAuthorizations = Map())
     lazy val spraygen = TaskKey[Seq[File]]("spraygen", "Generates model code from swagger")
     lazy val sprayGenerations = SettingKey[Seq[SprayGeneratorConfig]]("spray-generations", "Settings for the generated endpoints")
     lazy val extraImports = SettingKey[Seq[String]]("extra-imports", "Additional imports to use when auto generating spray endpoints.")
