@@ -16,7 +16,7 @@ import scala.reflect.ClassTag
 /**
  * Creates spray directive compositions that can be used to implement REST endpoints
  */
-class EndpointGenerator(state : State, swaggerData : Swagger, packageName : String, authenticateMappings : Map[String, (String, Seq[(String, String)])], jsonFormats : Boolean, extraImports : Seq[String], customExtractions : Map[String, String] ) {
+class EndpointGenerator(state : State, swaggerData : Swagger, packageName : String, authenticateMappings : Map[String, (String, Seq[(String, String)])], jsonFormats : Boolean, extraImports : Seq[String], customExtractions : Map[String, String], customEntityExtraction : Option[String]) {
 
   private case class Op(name : String, path : Path, method : HttpMethod, operation : Operation)
 
@@ -139,7 +139,7 @@ class EndpointGenerator(state : State, swaggerData : Swagger, packageName : Stri
           case model: RefModel =>
             val modelName = model.get$ref().split("/").last
             val resultType = TYPE_REF(s"$packageName.models.$modelName")
-            REF("entity") APPLY (REF("as") APPLYTYPE (if(param.getRequired) resultType else TYPE_OPTION(resultType)))
+            REF(customEntityExtraction.getOrElse("entity")) APPLY (REF("as") APPLYTYPE (if(param.getRequired) resultType else TYPE_OPTION(resultType)))
           case _ =>
             //TODO: Add support for non-ref models
             throw new UnsupportedOperationException("Only ref models are currently supported.")

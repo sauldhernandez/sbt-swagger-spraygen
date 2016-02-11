@@ -11,7 +11,7 @@ import scala.collection.JavaConversions._
 /**
  * Automatically generates model classes and spray jsonFormats from a swagger definition object.
  */
-class ModelGenerator(swaggerData : Swagger, packageName : String, generateJsonFormats : Boolean, ignoreModels : Set[String], annotations : Map[String, String], jsonTransform : Option[String], extraImports : Seq[String]) {
+class ModelGenerator(swaggerData : Swagger, packageName : String, generateJsonFormats : Boolean, ignoreModels : Set[String], annotations : Map[String, String], extraImports : Seq[String]) {
 
   type PropertyProcessResult = (Type, Seq[Tree], Set[String])
   type ModelProcessResult = (Set[String], Seq[Tree])
@@ -82,10 +82,7 @@ class ModelGenerator(swaggerData : Swagger, packageName : String, generateJsonFo
     val tree = if(generateJsonFormats)
       paramTrees ++ Seq[Tree](
         VAL(s"${name}Format") withFlags Flags.IMPLICIT := {
-          val jsonFormatCall = REF(s"jsonFormat${properties.size}") APPLY REF(name)
-          jsonTransform.map { functionName =>
-            REF(functionName) APPLY jsonFormatCall
-          }.getOrElse(jsonFormatCall)
+          REF(s"jsonFormat${properties.size}") APPLY REF(name)
         },
         classDef
       )
