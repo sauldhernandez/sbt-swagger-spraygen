@@ -55,7 +55,7 @@ class EndpointGenerator(state : State, swaggerData : Swagger, packageName : Stri
     } yield extraction.implicits.map { x =>
       val (name, t) = x
       DEF(name) withFlags Flags.IMPLICIT withType TYPE_REF(t) : Tree
-    }}.toSet.flatten
+    }}.flatten.distinct
   }.getOrElse(Seq())
 
 
