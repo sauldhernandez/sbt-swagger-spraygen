@@ -48,14 +48,14 @@ class EndpointGenerator(state : State, swaggerData : Swagger, packageName : Stri
   )
 
   private def generateExtractionImplicits(operations : Seq[Op]) = customEntityExtraction.map { extraction =>
-    {for {
-      op <- operations
-      params = filterParameters[BodyParameter](findAllParams(op))
-      if params.nonEmpty
-    } yield extraction.implicits.map { x =>
-      val (name, t) = x
-      DEF(name) withFlags Flags.IMPLICIT withType TYPE_REF(t) : Tree
-    }}.flatten.distinct
+    val allParams = operations.flatMap(op => findAllParams(op))
+    val bodyParams = filterParameters[BodyParameter](allParams)
+    if(bodyParams.nonEmpty)
+      extraction.implicits.map { x =>
+        val (name, t) = x
+        DEF(name) withFlags Flags.IMPLICIT withType TYPE_REF(t) : Tree
+      }
+    else Seq()
   }.getOrElse(Seq())
 
 
