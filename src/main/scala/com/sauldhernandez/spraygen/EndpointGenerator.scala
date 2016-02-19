@@ -51,9 +51,12 @@ class EndpointGenerator(state : State, swaggerData : Swagger, packageName : Stri
     val allParams = operations.flatMap(op => findAllParams(op))
     val bodyParams = filterParameters[BodyParameter](allParams)
     if(bodyParams.nonEmpty)
-      extraction.implicits.map { x =>
+      extraction.implicits.flatMap { x =>
         val (name, t) = x
-        DEF(name) withFlags Flags.IMPLICIT withType TYPE_REF(t) : Tree
+        Seq(
+          DEF(name) withType TYPE_REF(t) : Tree,
+          DEF(s"_$name") withFlags(Flags.IMPLICIT, Flags.PRIVATE) withType TYPE_REF(t) := REF(name) : Tree
+        )
       }
     else Seq()
   }.getOrElse(Seq())
@@ -65,9 +68,12 @@ class EndpointGenerator(state : State, swaggerData : Swagger, packageName : Stri
       .flatMap(authenticateMappings.get)
       .flatMap(_._2)
       .distinct
-      .map { item =>
+      .flatMap { item =>
         val (name, t) = item
-        DEF(name) withFlags Flags.IMPLICIT withType TYPE_REF(t) : Tree
+        Seq(
+          DEF(name) withType TYPE_REF(t) : Tree,
+          DEF(s"_$name") withFlags(Flags.IMPLICIT, Flags.PRIVATE) withType TYPE_REF(t) := REF(name) : Tree
+        )
       }
 
   private def retrieveRefParam(ref : RefParameter) = {
