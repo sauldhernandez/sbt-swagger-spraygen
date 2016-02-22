@@ -29,7 +29,7 @@ object SpraySwaggerGenPlugin extends AutoPlugin {
    */
   override lazy val projectSettings = Seq(
     sprayGenerations := Seq(SprayGeneratorConfig(
-      source = (sourceDirectory in Compile).value / "resources" / "api.yaml",
+      source = (resourceDirectory in Compile).value / "api.yaml",
       packageName = "swagger.spray"
     )),
     extraImports := Seq(),
@@ -41,7 +41,8 @@ object SpraySwaggerGenPlugin extends AutoPlugin {
 
   def gen(state : State, generations : Seq[SprayGeneratorConfig], imports : Seq[String], sourceDir : File, extractions : Map[String, String], annotations : Map[String, String]) : Seq[File] = {
     generations.flatMap { config =>
-      val configName = config.source.getName.split(".").head
+
+      val configName = config.source.getName
       val swaggerData = new SwaggerParser().read(config.source.getAbsolutePath)
       val packageOutput = sourceDir / "main" / "spraygen" / configName / "models.scala"
       val endpointOutput = sourceDir / "main" / "spraygen" / configName / "endpoints.scala"
