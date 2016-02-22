@@ -41,9 +41,10 @@ object SpraySwaggerGenPlugin extends AutoPlugin {
 
   def gen(state : State, generations : Seq[SprayGeneratorConfig], imports : Seq[String], sourceDir : File, extractions : Map[String, String], annotations : Map[String, String]) : Seq[File] = {
     generations.flatMap { config =>
+      val configName = config.source.getName.split(".").head
       val swaggerData = new SwaggerParser().read(config.source.getAbsolutePath)
-      val packageOutput = sourceDir / "main" / "spraygen" / "models.scala"
-      val endpointOutput = sourceDir / "main" / "spraygen" / "endpoints.scala"
+      val packageOutput = sourceDir / "main" / "spraygen" / configName / "models.scala"
+      val endpointOutput = sourceDir / "main" / "spraygen" / configName / "endpoints.scala"
 
       val generator = new ModelGenerator(swaggerData, config.packageName, config.withJsonFormats, config.ignoreModels, annotations, imports)
       val endpointGenerator = new EndpointGenerator(state, swaggerData, config.packageName, config.authorizationHandlers, config.withJsonFormats, imports, extractions, config.customEntityExtraction)
