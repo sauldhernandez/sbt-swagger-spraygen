@@ -26,7 +26,7 @@ class EndpointGenerator(state : State, swaggerData : Swagger, packageName : Stri
     val jsonImports = if(jsonFormats) Seq(IMPORT("spray.httpx.SprayJsonSupport._"), IMPORT("spray.json.DefaultJsonProtocol._"), IMPORT(s"$packageName.models._")) else Seq()
 
     val endpointSources = swaggerData.getPaths.flatMap( x => x._2.getOperationMap.map( v => Op(x._1, x._2, v._1, v._2)))
-      .groupBy(_.operation.getTags.headOption.getOrElse("uncategorized"))
+      .groupBy(op => Option(op.operation.getTags).flatMap(_.headOption).getOrElse("uncategorized"))
 
     val packageObject = PACKAGE(packageName) := BLOCK(
       PACKAGEOBJECTDEF("endpoints") := BLOCK(
