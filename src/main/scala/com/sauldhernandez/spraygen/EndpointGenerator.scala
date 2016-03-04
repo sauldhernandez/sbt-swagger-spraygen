@@ -200,6 +200,7 @@ class EndpointGenerator(state : State, swaggerData : Swagger, packageName : Stri
         case "string" => LIT(queryParam.getName)
         case "integer" => LIT(queryParam.getName) DOT "as" APPLYTYPE IntClass
         case "number" => LIT(queryParam.getName) DOT "as" APPLYTYPE DoubleClass
+        case "boolean" => LIT(queryParam.getName) DOT "as" APPLYTYPE BooleanClass
       }
 
       if(queryParam.getRequired)
