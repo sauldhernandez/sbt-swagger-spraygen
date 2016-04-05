@@ -6,7 +6,7 @@ organization := "com.sauldhernandez"
 
 scalaVersion in Global := "2.10.5"
 
-semanticVersion := Version(0, 3, 0)
+semanticVersion := Version(1, 0, 0)
 
 sbtPlugin := true
 

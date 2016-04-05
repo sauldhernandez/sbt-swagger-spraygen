@@ -19,8 +19,7 @@ If jsonFormat generation is enabled, the generated formats can be used with [spr
 - Add the plugin in your `plugins.sbt`:
 
 ```
-resolvers += "Sonatype OSS Snapshots" at "https://oss.sonatype.org/content/repositories/snapshots/"
-addSbtPlugin("com.sauldhernandez" % "sbt-swagger-spraygen" % "0.3.0-SNAPSHOT")
+addSbtPlugin("com.sauldhernandez" % "sbt-swagger-spraygen" % "1.0.0")
 ```
 
 - This plugin is an AutoPlugin, so you must add it to your project in `build.sbt`:
