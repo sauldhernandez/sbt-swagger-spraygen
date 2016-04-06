@@ -54,8 +54,15 @@ class ModelGenerator(swaggerData : Swagger, packageName : String, generateJsonFo
       val (arrayType, arrayTree, arrayProcessed) = typeFromProperty(arrayModel.getItems, name, alreadyProcessed)
       (Set(name) ++ arrayProcessed, arrayTree ++ Seq(TYPEVAR(name) := TYPE_SEQ(arrayType)))
     case objectModel =>
-      val (resultTree, resultProcessed) = generateComplexObject(name, Option(objectModel.getProperties).map(_.toMap).getOrElse(Map()), alreadyProcessed)
-      (Set(name) ++ resultProcessed, resultTree)
+      //If an object model has no properties, make it an alias of JsObject (as it can have anything)
+      val properties = Option(objectModel.getProperties).map(_.toMap).getOrElse(Map())
+      if(properties.isEmpty) {
+        (Set(name), Seq(TYPEVAR(name) := TYPE_REF("spray.json.JsObject")))
+      }
+      else {
+        val (resultTree, resultProcessed) = generateComplexObject(name, properties, alreadyProcessed)
+        (Set(name) ++ resultProcessed, resultTree)
+      }
   }
 
   def generateComplexObject(name : String, properties : Map[String, Property], alreadyProcessed : Set[String]) : (Seq[Tree], Set[String]) = {
@@ -111,8 +118,14 @@ class ModelGenerator(swaggerData : Swagger, packageName : String, generateJsonFo
       val next = innerModelCount.get(parentName).map(_ + 1).getOrElse(1)
       innerModelCount.update(parentName, next)
       val childName = s"${parentName}Inner$next"
-      val (complexTree, complexProcessed) = generateComplexObject(childName, obj.getProperties.toMap, alreadyProcessed)
-      (RootClass.newClass(childName), complexTree, complexProcessed)
+      val properties = Option(obj.getProperties).map(_.toMap).getOrElse(Map())
+      if(properties.isEmpty) {
+        (TYPE_REF("spray.json.JsObject"), Seq(), Set())
+      }
+      else {
+        val (complexTree, complexProcessed) = generateComplexObject(childName, properties, alreadyProcessed)
+        (RootClass.newClass(childName), complexTree, complexProcessed)
+      }
     case x => (convertBaseType(x.getType), Seq(), Set())
   }
 
