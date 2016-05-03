@@ -80,7 +80,7 @@ class ModelGenerator(swaggerData : Swagger, packageName : String, generateJsonFo
 
       } yield ANNOT(TYPE_REF(mapped.get))
 
-      val resultType : ValDef = if(paramInfo.getRequired) PARAM(paramName, paramType) withAnnots annotationsTree else PARAM(paramName, TYPE_OPTION(paramType)) withAnnots annotationsTree
+      val resultType : ValDef = if(paramInfo.getRequired) PARAM(paramName, paramType) withAnnots annotationsTree else PARAM(paramName, TYPE_OPTION(paramType)) withAnnots annotationsTree := NONE
 
       (previousTypes ++ Seq(resultType), previousTree ++ paramTree, previousProcessed ++ paramProcessed)
     }

@@ -2,7 +2,7 @@ package com.sauldhernandez.spraygen
 
 import java.util
 
-import com.sauldhernandez.spraygen.SpraySwaggerGenPlugin.autoImport.CustomEntityExtraction
+import com.sauldhernandez.spraygen.SpraySwaggerGenPlugin.autoImport.{DirectiveMapping, ExpandableDirective}
 import io.swagger.models.parameters._
 import io.swagger.models._
 import sbt.State
@@ -17,12 +17,19 @@ import scala.reflect.ClassTag
 /**
  * Creates spray directive compositions that can be used to implement REST endpoints
  */
-class EndpointGenerator(state : State, swaggerData : Swagger, packageName : String, authenticateMappings : Map[String, (String, Seq[(String, String)])], jsonFormats : Boolean, extraImports : Seq[String], customExtractions : Map[String, String], customEntityExtraction : Option[CustomEntityExtraction]) {
+class EndpointGenerator(state : State,
+                        swaggerData : Swagger,
+                        packageName : String,
+                        authenticateMappings : DirectiveMapping,
+                        jsonFormats : Boolean,
+                        privateImplicits : Boolean,
+                        extraImports : Seq[String],
+                        customExtractions : DirectiveMapping,
+                        customEntityExtraction : Option[ExpandableDirective]) {
 
   private case class Op(name : String, path : Path, method : HttpMethod, operation : Operation)
 
   def generate : String = {
-
     val jsonImports =
       if(jsonFormats)
         (if (extraImports.isEmpty) Seq(IMPORT("spray.httpx.SprayJsonSupport._"), IMPORT("spray.json.DefaultJsonProtocol._"))
@@ -47,39 +54,50 @@ class EndpointGenerator(state : State, swaggerData : Swagger, packageName : Stri
 
   private def generatePathTrait(name : String, operations : Seq[Op]) = TRAITDEF(s"${name.capitalize}Endpoints") := BLOCK(
     generateAuthenticateImplicits(operations) ++
-    generateExtractionImplicits(operations) ++
+    generateEntityExtractionImplicits(operations) ++
+    generateCustomDirectiveImplicits(operations) ++
     operations.map(x => generateOperationEndpoint(x))
-
   )
 
-  private def generateExtractionImplicits(operations : Seq[Op]) = customEntityExtraction.map { extraction =>
+  private def generateImplicits(keys : Seq[String], source : DirectiveMapping) = keys.flatMap(source.get)
+      .flatMap(_.dependencies)
+      .distinct
+      .flatMap { item =>
+        val (name, t) = (item.dependencyName, item.dependencyType)
+        if(privateImplicits)
+          Seq(
+            DEF(name) withType TYPE_REF(t) : Tree,
+            DEF(s"_$name") withFlags(Flags.IMPLICIT, Flags.PRIVATE) withType TYPE_REF(t) := REF(name) : Tree
+          )
+        else
+          Seq(
+            DEF(name) withFlags Flags.IMPLICIT withType TYPE_REF(t) : Tree
+          )
+      }
+
+  private def generateCustomDirectiveImplicits(operations : Seq[Op]) =  {
+    val allParams = operations.flatMap(op => findAllParams(op))
+      .map(_.getName).filter(p => customExtractions.get(p).isDefined)
+
+    generateImplicits(allParams, customExtractions)
+  }
+
+  private def generateEntityExtractionImplicits(operations : Seq[Op]) = customEntityExtraction.map { extraction =>
     val allParams = operations.flatMap(op => findAllParams(op))
     val bodyParams = filterParameters[BodyParameter](allParams)
     if(bodyParams.nonEmpty)
-      extraction.implicits.flatMap { x =>
-        val (name, t) = x
-        Seq(
-          DEF(name) withType TYPE_REF(t) : Tree,
-          DEF(s"_$name") withFlags(Flags.IMPLICIT, Flags.PRIVATE) withType TYPE_REF(t) := REF(name) : Tree
-        )
-      }
+      generateImplicits(Seq("_"), Map("_" -> extraction))
     else Seq()
   }.getOrElse(Seq())
 
 
-  private def generateAuthenticateImplicits(operations : Seq[Op]) = operations
+  private def generateAuthenticateImplicits(operations : Seq[Op]) = {
+    val keys = operations
       .flatMap(op => Option(op.operation.getSecurity))
       .flatMap(sec => sec.flatten).map(_._1)
-      .flatMap(authenticateMappings.get)
-      .flatMap(_._2)
-      .distinct
-      .flatMap { item =>
-        val (name, t) = item
-        Seq(
-          DEF(name) withType TYPE_REF(t) : Tree,
-          DEF(s"_$name") withFlags(Flags.IMPLICIT, Flags.PRIVATE) withType TYPE_REF(t) := REF(name) : Tree
-        )
-      }
+
+    generateImplicits(keys, authenticateMappings)
+  }
 
   private def retrieveRefParam(ref : RefParameter) = {
     val paramName = ref.get$ref().split("/").last
@@ -168,7 +186,7 @@ class EndpointGenerator(state : State, swaggerData : Swagger, packageName : Stri
           case model: RefModel =>
             val modelName = model.get$ref().split("/").last
             val resultType = TYPE_REF(s"$packageName.models.$modelName")
-            REF(customEntityExtraction.map(_.directiveName).getOrElse("entity")) APPLY (REF("as") APPLYTYPE (if(param.getRequired) resultType else TYPE_OPTION(resultType)))
+            REF(customEntityExtraction.map(_.directive).getOrElse("entity")) APPLY (REF("as") APPLYTYPE (if(param.getRequired) resultType else TYPE_OPTION(resultType)))
           case _ =>
             //TODO: Add support for non-ref models
             throw new UnsupportedOperationException("Only ref models are currently supported.")
@@ -182,7 +200,7 @@ class EndpointGenerator(state : State, swaggerData : Swagger, packageName : Stri
         if(oauthSchemes.isEmpty) {
           //Non-oauth2 scheme
           val authenticatorName = authenticateMappings.get(securityDefinitionName)
-          REF("authenticate") APPLY REF(authenticatorName.map(_._1).getOrElse {
+          REF("authenticate") APPLY REF(authenticatorName.map(_.directive).getOrElse {
             state.log.error(s"Could not find authenticator mapping for security definition $securityDefinitionName.")
             throw new IllegalArgumentException("authorizationHandler")
           })
@@ -222,7 +240,8 @@ class EndpointGenerator(state : State, swaggerData : Swagger, packageName : Stri
     //Add custom extractors
     val customDirectives = allParams.flatMap { param =>
       customExtractions.get(param.getName)
-    }.map ( REF(_) )
+    }.map ( v => REF(v.directive) )
+    //TODO: custom extractor implicits
 
     val name = Seq(method.name().toLowerCase()) ++ pathPieces.map(n => camelCase(n.split("-"))).map(name => if(name.startsWith("{")) stripBrackets(name) else name)
 

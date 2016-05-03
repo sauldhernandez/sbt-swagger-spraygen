@@ -12,14 +12,37 @@ object SpraySwaggerGenPlugin extends AutoPlugin {
    * when the plugin is enabled
    */
   object autoImport {
-    type SprayAuthorizations = Map[String, (String, Seq[(String, String)])]
-    case class CustomEntityExtraction(directiveName : String, implicits : Seq[(String, String)] = Seq())
-    case class SprayGeneratorConfig(source : File, packageName : String, ignoreModels : Set[String] = Set(), customEntityExtraction : Option[CustomEntityExtraction] = None, withJsonFormats : Boolean = true, authorizationHandlers : SprayAuthorizations = Map())
+    /**
+      * An abstract dependency to be added to an endpoint.
+      *
+      * First element is the name of the dependency
+      * Second element is the type of the dependency
+      */
+    case class AbstractDependency(dependencyName : String, dependencyType: String)
+
+    /**
+      * A directive that will be used, but might have implicit abstract dependencies.
+      * @param directive The directive to call. This string will be placed as-is in the code.
+      * @param dependencies Dependencies to add to the endpoint as implicit abstracts
+      */
+    case class ExpandableDirective(directive : String, dependencies : Seq[AbstractDependency] = Seq())
+
+    type DirectiveMapping = Map[String, ExpandableDirective]
+
+    case class SprayGeneratorConfig(source : File,
+                                    packageName : String,
+                                    ignoreModels : Set[String] = Set(),
+                                    customEntityExtraction : Option[ExpandableDirective] = None,
+                                    withJsonFormats : Boolean = true,
+                                    withPrivateImplicits : Boolean = true,
+                                    authorizationHandlers : DirectiveMapping = Map()
+                                   )
+
     lazy val spraygen = TaskKey[Seq[File]]("spraygen", "Generates model code from swagger")
     lazy val sprayGenerations = SettingKey[Seq[SprayGeneratorConfig]]("spray-generations", "Settings for the generated endpoints")
     lazy val extraImports = SettingKey[Seq[String]]("extra-imports", "Additional imports to use when auto generating spray endpoints.")
     lazy val modelAnnotations = SettingKey[Map[String, String]]("model-annotations", "Mapping for extensions to annotations conversion in the model generation process")
-    lazy val customExtractions = SettingKey[Map[String, String]]("custom-extractions", "Parameters for which a custom extraction directive will be applied")
+    lazy val customExtractions = SettingKey[DirectiveMapping]("custom-extractions", "Parameters for which a custom extraction directive will be applied")
   }
 
   import autoImport._
@@ -39,7 +62,13 @@ object SpraySwaggerGenPlugin extends AutoPlugin {
   )
 
 
-  def gen(state : State, generations : Seq[SprayGeneratorConfig], imports : Seq[String], sourceDir : File, extractions : Map[String, String], annotations : Map[String, String]) : Seq[File] = {
+  def gen(state : State,
+          generations : Seq[SprayGeneratorConfig],
+          imports : Seq[String],
+          sourceDir : File,
+          extractions : DirectiveMapping,
+          annotations : Map[String, String]
+         ) : Seq[File] = {
     generations.flatMap { config =>
 
       val configName = config.source.getName
@@ -48,7 +77,16 @@ object SpraySwaggerGenPlugin extends AutoPlugin {
       val endpointOutput = sourceDir / "main" / "spraygen" / configName / "endpoints.scala"
 
       val generator = new ModelGenerator(swaggerData, config.packageName, config.withJsonFormats, config.ignoreModels, annotations, imports)
-      val endpointGenerator = new EndpointGenerator(state, swaggerData, config.packageName, config.authorizationHandlers, config.withJsonFormats, imports, extractions, config.customEntityExtraction)
+      val endpointGenerator = new EndpointGenerator(
+        state,
+        swaggerData,
+        config.packageName,
+        config.authorizationHandlers,
+        config.withJsonFormats,
+        config.withPrivateImplicits,
+        imports,
+        extractions,
+        config.customEntityExtraction)
 
       write(packageOutput, generator.generate)
       write(endpointOutput, endpointGenerator.generate)
