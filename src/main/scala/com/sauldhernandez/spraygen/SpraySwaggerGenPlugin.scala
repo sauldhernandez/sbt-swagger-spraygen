@@ -2,6 +2,7 @@ package com.sauldhernandez.spraygen
 
 import sbt._
 import Keys._
+import io.swagger.models.parameters.PathParameter
 import sbt.IO._
 import io.swagger.parser._
 
@@ -29,13 +30,27 @@ object SpraySwaggerGenPlugin extends AutoPlugin {
 
     type DirectiveMapping = Map[String, ExpandableDirective]
 
+    type PathParameterMapper = PathParameter => ExpandableDirective
+
+    object PathParameterMapper {
+      val default : PathParameterMapper = { pathParameter => pathParameter.getType match {
+        case "string" => ExpandableDirective("Segment")
+        case "boolean" => ExpandableDirective("Map(\"true\" -> true, \"false\" -> false)")
+        case "integer" => ExpandableDirective("IntNumber")
+        case "number" => ExpandableDirective("DoubleNumber")
+      }
+      }
+    }
+
     case class SprayGeneratorConfig(source : File,
                                     packageName : String,
                                     ignoreModels : Set[String] = Set(),
                                     customEntityExtraction : Option[ExpandableDirective] = None,
                                     withJsonFormats : Boolean = true,
                                     withPrivateImplicits : Boolean = true,
-                                    authorizationHandlers : DirectiveMapping = Map()
+                                    authorizationHandlers : DirectiveMapping = Map(),
+                                    pathParameterMapper: PathParameterMapper = PathParameterMapper.default,
+                                    customPathDirective : Option[ExpandableDirective] = None
                                    )
 
     lazy val spraygen = TaskKey[Seq[File]]("spraygen", "Generates model code from swagger")
@@ -86,6 +101,8 @@ object SpraySwaggerGenPlugin extends AutoPlugin {
         config.withPrivateImplicits,
         imports,
         extractions,
+        config.pathParameterMapper,
+        config.customPathDirective,
         config.customEntityExtraction)
 
       write(packageOutput, generator.generate)

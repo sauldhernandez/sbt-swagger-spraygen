@@ -2,7 +2,7 @@ package com.sauldhernandez.spraygen
 
 import java.util
 
-import com.sauldhernandez.spraygen.SpraySwaggerGenPlugin.autoImport.{DirectiveMapping, ExpandableDirective}
+import com.sauldhernandez.spraygen.SpraySwaggerGenPlugin.autoImport.{AbstractDependency, DirectiveMapping, ExpandableDirective, PathParameterMapper}
 import io.swagger.models.parameters._
 import io.swagger.models._
 import sbt.State
@@ -25,6 +25,8 @@ class EndpointGenerator(state : State,
                         privateImplicits : Boolean,
                         extraImports : Seq[String],
                         customExtractions : DirectiveMapping,
+                        pathParamMapper : PathParameterMapper,
+                        customPathDirective : Option[ExpandableDirective],
                         customEntityExtraction : Option[ExpandableDirective]) {
 
   private case class Op(name : String, path : Path, method : HttpMethod, operation : Operation)
@@ -53,50 +55,62 @@ class EndpointGenerator(state : State,
   }
 
   private def generatePathTrait(name : String, operations : Seq[Op]) = TRAITDEF(s"${name.capitalize}Endpoints") := BLOCK(
-    generateAuthenticateImplicits(operations) ++
-    generateEntityExtractionImplicits(operations) ++
-    generateCustomDirectiveImplicits(operations) ++
+    {
+      val authDependencies = generateAuthenticateDependencies(operations)
+      val entityExtractionDependencies = generateEntityExtractionDependencies(operations)
+      val customDirectiveDependencies = generateCustomDirectiveDependencies(operations)
+      val pathParamDependencies = generatePathParamDependencies(operations)
+
+      generateImplicits(authDependencies ++ entityExtractionDependencies ++ customDirectiveDependencies ++ pathParamDependencies)
+    } ++
     operations.map(x => generateOperationEndpoint(x))
   )
 
-  private def generateImplicits(keys : Seq[String], source : DirectiveMapping) = keys.flatMap(source.get)
-      .flatMap(_.dependencies)
-      .distinct
-      .flatMap { item =>
-        val (name, t) = (item.dependencyName, item.dependencyType)
-        if(privateImplicits)
-          Seq(
-            DEF(name) withType TYPE_REF(t) : Tree,
-            DEF(s"_$name") withFlags(Flags.IMPLICIT, Flags.PRIVATE) withType TYPE_REF(t) := REF(name) : Tree
-          )
-        else
-          Seq(
-            DEF(name) withFlags Flags.IMPLICIT withType TYPE_REF(t) : Tree
-          )
-      }
+  private def generateImplicits(dependencies : Seq[AbstractDependency]) : Seq[Tree] = dependencies
+    .distinct
+    .flatMap { item =>
+      val (name, t) = (item.dependencyName, item.dependencyType)
+      if(privateImplicits)
+        Seq(
+          DEF(name) withType TYPE_REF(t) : Tree,
+          DEF(s"_$name") withFlags(Flags.IMPLICIT, Flags.PRIVATE) withType TYPE_REF(t) := REF(name) : Tree
+        )
+      else
+        Seq(
+          DEF(name) withFlags Flags.IMPLICIT withType TYPE_REF(t) : Tree
+        )
+    }
 
-  private def generateCustomDirectiveImplicits(operations : Seq[Op]) =  {
+  private def extractDependencies(keys : Seq[String], source : DirectiveMapping) = keys.flatMap(source.get).flatMap(_.dependencies)
+
+  private def generateCustomDirectiveDependencies(operations : Seq[Op]) =  {
     val allParams = operations.flatMap(op => findAllParams(op))
       .map(_.getName).filter(p => customExtractions.get(p).isDefined)
 
-    generateImplicits(allParams, customExtractions)
+    extractDependencies(allParams, customExtractions)
   }
 
-  private def generateEntityExtractionImplicits(operations : Seq[Op]) = customEntityExtraction.map { extraction =>
+  private def generateEntityExtractionDependencies(operations : Seq[Op]) = customEntityExtraction.map { extraction =>
     val allParams = operations.flatMap(op => findAllParams(op))
     val bodyParams = filterParameters[BodyParameter](allParams)
     if(bodyParams.nonEmpty)
-      generateImplicits(Seq("_"), Map("_" -> extraction))
+      extraction.dependencies
     else Seq()
   }.getOrElse(Seq())
 
+  private def generatePathParamDependencies(operations : Seq[Op]) = {
+    val allParams = operations.flatMap(op => findAllParams(op))
+    val pathParams = filterParameters[PathParameter](allParams)
 
-  private def generateAuthenticateImplicits(operations : Seq[Op]) = {
+    pathParams.flatMap(p => pathParamMapper(p).dependencies) ++ customPathDirective.map(_.dependencies).getOrElse(Seq())
+  }
+
+  private def generateAuthenticateDependencies(operations : Seq[Op]) = {
     val keys = operations
       .flatMap(op => Option(op.operation.getSecurity))
       .flatMap(sec => sec.flatten).map(_._1)
 
-    generateImplicits(keys, authenticateMappings)
+    extractDependencies(keys, authenticateMappings)
   }
 
   private def retrieveRefParam(ref : RefParameter) = {
@@ -106,12 +120,7 @@ class EndpointGenerator(state : State,
     param.getOrElse(throw new UnsupportedOperationException(s"Could not solve parameter ref for name $paramName"))
   }
 
-  private def matchPathType(pathParam : PathParameter) = pathParam.getType match {
-    case "string" => REF("Segment")
-    case "boolean" => REF("Map(\"true\" -> true, \"false\" -> false)")
-    case "integer" => REF("IntNumber")
-    case "number" => REF("DoubleNumber")
-  }
+  private def matchPathType(pathParam : PathParameter) = REF(pathParamMapper(pathParam).directive)
 
   private def filterParameters[T <: Parameter : ClassTag](params : Seq[Parameter]) : Seq[T] = params.flatMap {
       case x : T => Some(x)
@@ -178,7 +187,7 @@ class EndpointGenerator(state : State,
 
     //Build the path Directive
     val basePath = Option(swaggerData.getBasePath).map(base => base.split("/").filter(!_.isEmpty).map(LIT(_)).toSeq)
-    val pathDirective = REF("path") APPLY (basePath.getOrElse(Seq()) ++ pathElements).reduceLeft { (a, b) => a INFIX "/" APPLY b }
+    val pathDirective = REF(customPathDirective.map(_.directive).getOrElse("path")) APPLY (basePath.getOrElse(Seq()) ++ pathElements).reduceLeft { (a, b) => a INFIX "/" APPLY b }
 
     //If the operation has a body parameter, a parsing directive must be added.
     val bodyDirective = filterParameters[BodyParameter](allParams).filter(_ => jsonFormats).map { param =>
